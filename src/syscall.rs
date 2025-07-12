@@ -97,6 +97,14 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
             tf.arg3() as _,
             tf.arg4().into(),
         ),
+        Sysno::faccessat => sys_faccessat(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2() as _,
+            tf.arg3() as _,
+        ),
+        #[cfg(target_arch = "x86_64")]
+        Sysno::access => sys_access(tf.arg0().into(), tf.arg1() as _),
 
         // mm
         Sysno::brk => sys_brk(tf.arg0() as _),
@@ -202,6 +210,46 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         Sysno::gettimeofday => sys_gettimeofday(tf.arg0().into()),
         Sysno::times => sys_times(tf.arg0().into()),
         Sysno::clock_gettime => sys_clock_gettime(tf.arg0() as _, tf.arg1().into()),
+
+        // io multiplexing
+        #[cfg(target_arch = "x86_64")]
+        Sysno::poll => sys_poll(tf.arg0().into(), tf.arg1() as _, tf.arg2() as _),
+        Sysno::ppoll => sys_ppoll(
+            tf.arg0().into(),
+            tf.arg1() as _,
+            tf.arg2().into(),
+            tf.arg3().into(),
+        ),
+        #[cfg(target_arch = "x86_64")]
+        Sysno::select => sys_select(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3().into(),
+            tf.arg4().into(),
+        ),
+        Sysno::pselect6 => sys_pselect6(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3().into(),
+            tf.arg4().into(),
+            tf.arg5().into(),
+        ),
+        Sysno::epoll_create1 => sys_epoll_create1(tf.arg0() as _),
+        Sysno::epoll_ctl => sys_epoll_ctl(
+            tf.arg0() as _,
+            tf.arg1() as _,
+            tf.arg2() as _,
+            tf.arg3().into(),
+        ),
+        Sysno::epoll_pwait => sys_epoll_pwait(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2() as _,
+            tf.arg3() as _,
+            tf.arg4().into(),
+        ),
 
         _ => {
             warn!("Unimplemented syscall: {}", sysno);

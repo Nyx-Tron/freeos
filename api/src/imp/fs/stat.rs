@@ -130,3 +130,55 @@ pub fn sys_statx(
 
     Ok(0)
 }
+
+/// Check whether the calling process can access the file pathname.
+/// Since the current system doesn't implement permission groups,
+/// we only check if the file exists and return 0.
+pub fn sys_faccessat(
+    dirfd: c_int,
+    pathname: UserConstPtr<c_char>,
+    mode: u32,
+    _flags: u32,
+) -> LinuxResult<isize> {
+    let path = pathname.get_as_str()?;
+    debug!(
+        "sys_faccessat <= dirfd: {}, pathname: {}, mode: {:#x}",
+        dirfd, path, mode
+    );
+
+    // Handle the path resolution using the same logic as fstatat
+    let resolved_path = handle_file_path(dirfd, path)?;
+
+    // Try to check if the file exists by attempting to stat it
+    match stat_at_path(resolved_path.as_str()) {
+        Ok(_) => {
+            // File exists, since we don't implement permissions,
+            // we assume all access types are allowed
+            debug!("sys_faccessat: file exists, allowing access");
+            Ok(0)
+        }
+        Err(LinuxError::ENOENT) => {
+            debug!("sys_faccessat: file does not exist");
+            Err(LinuxError::ENOENT)
+        }
+        Err(e) => {
+            debug!("sys_faccessat: error accessing file: {:?}", e);
+            Err(e)
+        }
+    }
+}
+
+/// Check whether the calling process can access the file pathname.
+/// This is the legacy access() syscall for x86_64.
+/// Since the current system doesn't implement permission groups,
+/// we only check if the file exists and return 0.
+pub fn sys_access(pathname: UserConstPtr<c_char>, mode: u32) -> LinuxResult<isize> {
+    let path = pathname.get_as_str()?;
+    debug!("sys_access <= pathname: {}, mode: {:#x}", path, mode);
+
+    // Use AT_FDCWD (-100) to indicate current working directory
+    const AT_FDCWD: c_int = -100;
+
+    // Call faccessat with AT_FDCWD and no flags
+    sys_faccessat(AT_FDCWD, pathname, mode, 0)
+}
