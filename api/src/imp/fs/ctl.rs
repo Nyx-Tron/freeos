@@ -6,10 +6,17 @@ use core::{
 use alloc::ffi::CString;
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::DirEntry;
+use axtask::{TaskExtRef, current};
 use linux_raw_sys::general::{
     AT_FDCWD, AT_REMOVEDIR, DT_BLK, DT_CHR, DT_DIR, DT_FIFO, DT_LNK, DT_REG, DT_SOCK, DT_UNKNOWN,
-    linux_dirent64,
+    linux_dirent64, termios,
 };
+
+// Define ioctl constants directly since they're behind a feature flag
+const TIOCGPGRP: u32 = 21519;
+const TIOCSPGRP: u32 = 21520;
+const TCGETS: u32 = 21505;
+const TCSETS: u32 = 21506;
 
 use crate::{
     file::{Directory, FileLike},
@@ -25,9 +32,57 @@ use crate::{
 /// * `op` - The request code. It is of type unsigned long in glibc and BSD,
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
-pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
-    warn!("Unimplemented syscall: SYS_IOCTL");
-    Ok(0)
+pub fn sys_ioctl(fd: i32, op: usize, argp: UserPtr<c_void>) -> LinuxResult<isize> {
+    debug!("sys_ioctl <= fd: {}, op: 0x{:x}", fd, op);
+
+    match op as u32 {
+        TIOCGPGRP => {
+            // Get foreground process group
+            let current_task = current();
+            let pgid = current_task.task_ext().thread.process().group().pgid();
+            let pgid_ptr: UserPtr<i32> = UserPtr::from(argp.address().as_usize());
+            *pgid_ptr.get_as_mut()? = pgid as i32;
+            debug!("TIOCGPGRP returning pgid: {}", pgid);
+            Ok(0)
+        }
+        TIOCSPGRP => {
+            // Set foreground process group
+            let pgid_ptr_const: UserConstPtr<i32> = UserConstPtr::from(argp.address().as_usize());
+            let pgid = *pgid_ptr_const.get_as_ref()? as u32;
+            debug!("TIOCSPGRP setting pgid: {}", pgid);
+            // For now, just return success - actual terminal control would require more complex state
+            Ok(0)
+        }
+        TCGETS => {
+            // Get terminal attributes
+            let termios_ptr: UserPtr<termios> = UserPtr::from(argp.address().as_usize());
+            let termios_data = termios_ptr.get_as_mut()?;
+
+            // Initialize with default terminal settings
+            *termios_data = termios {
+                c_iflag: 0x500,  // BRKINT | ISTRIP
+                c_oflag: 0x5,    // OPOST | ONLCR
+                c_cflag: 0xbf,   // CS8 | CREAD | HUPCL
+                c_lflag: 0x8a3b, // ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHOCTL | ECHOKE | IEXTEN
+                c_line: 0,
+                c_cc: [
+                    3, 28, 127, 21, 4, 0, 1, 0, 17, 19, 26, 0, 18, 15, 23, 22, 0, 0, 0,
+                ],
+            };
+
+            debug!("TCGETS returning default termios");
+            Ok(0)
+        }
+        TCSETS => {
+            // Set terminal attributes
+            debug!("TCSETS called - ignoring for now");
+            Ok(0)
+        }
+        _ => {
+            warn!("Unimplemented ioctl operation: 0x{:x}", op);
+            Ok(0)
+        }
+    }
 }
 
 pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
