@@ -1,9 +1,9 @@
 #!/bin/bash
 
 AX_ROOT=.arceos
-COMMIT=54d5739
+COMMIT=1b2b27d
 test ! -d "$AX_ROOT" && echo "Cloning repositories ..." || true
-test ! -d "$AX_ROOT" && git clone https://github.com/oscomp/arceos "$AX_ROOT" || true
+test ! -d "$AX_ROOT" && git clone https://github.com/MF-B/arceos "$AX_ROOT" || true
 
 git -C "$AX_ROOT" reset --hard "$COMMIT" || {
     echo "Failed to reset to commit $COMMIT. Please check the repository."
