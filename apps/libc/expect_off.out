@@ -50,3 +50,7 @@ All eager/lazy allocations freed
 2MB linear mapping freed
 ========== END test_linear_mapping ==========
 All hugepage tests completed successfully!
+
+Test sys_getpgid and sys_setpgid
+TEST PASSED: PGID equals PID after setpgid(0, 0)
+All tests completed

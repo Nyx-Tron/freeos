@@ -1,6 +1,8 @@
-use axerrno::LinuxResult;
+use axerrno::{LinuxError, LinuxResult};
+use axprocess::Pid;
 use axtask::{TaskExtRef, current};
 use num_enum::TryFromPrimitive;
+use starry_core::task::{get_process, get_process_group};
 
 pub fn sys_getpid() -> LinuxResult<isize> {
     Ok(axtask::current().task_ext().thread.process().pid() as _)
@@ -18,6 +20,71 @@ pub fn sys_getppid() -> LinuxResult<isize> {
 
 pub fn sys_gettid() -> LinuxResult<isize> {
     Ok(axtask::current().id().as_u64() as _)
+}
+
+pub fn sys_getpgid(pid: Pid) -> LinuxResult<isize> {
+    if pid == 0 {
+        Ok(current().task_ext().thread.process().group().pgid() as _)
+    } else {
+        let process = get_process(pid)?;
+        Ok(process.group().pgid() as _)
+    }
+}
+
+pub fn sys_setpgid(pid: Pid, pgid: Pid) -> LinuxResult<isize> {
+    let current_task = current();
+    let current_process = current_task.task_ext().thread.process();
+
+    let target_process = if pid == 0 {
+        current_process.clone()
+    } else {
+        get_process(pid)?
+    };
+
+    let target_pgid = if pgid == 0 {
+        target_process.pid()
+    } else {
+        pgid
+    };
+
+    if target_pgid == target_process.group().pgid() {
+        return Ok(0);
+    }
+
+    if target_process.pid() != current_process.pid() {
+        if target_process
+            .parent()
+            .is_none_or(|p| p.pid() != current_process.pid())
+        {
+            return Err(LinuxError::ESRCH);
+        }
+
+        if target_process.group().session().sid() != current_process.group().session().sid() {
+            return Err(LinuxError::EPERM);
+        }
+    }
+
+    if target_pgid == target_process.pid() {
+        if target_process.create_group().is_none() {
+            return Err(LinuxError::EPERM);
+        }
+    } else {
+        let target_group = get_process_group(target_pgid);
+        if target_group.is_err() {
+            return Err(LinuxError::EPERM);
+        }
+        let target_group = target_group.unwrap();
+
+        if target_group.session().sid() != target_process.group().session().sid() {
+            return Err(LinuxError::EPERM);
+        }
+
+        if !target_process.move_to_group(&target_group) {
+            return Err(LinuxError::EPERM);
+        }
+    }
+
+    Ok(0)
 }
 
 /// ARCH_PRCTL codes
