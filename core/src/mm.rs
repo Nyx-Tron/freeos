@@ -147,6 +147,7 @@ pub fn load_user_app(
         )?;
 
         if interp_path == "/lib/ld-linux-riscv64-lp64.so.1"
+            || interp_path == "/lib/ld-linux-riscv64-lp64d.so.1"
             || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
             || interp_path == "/lib64/ld-linux-x86-64.so.2"
             || interp_path == "/lib/ld-linux-aarch64.so.1"

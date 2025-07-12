@@ -12,3 +12,4 @@ apps/*/build/
 /.axconfig.*
 *.img
 vendor
+sdcard
