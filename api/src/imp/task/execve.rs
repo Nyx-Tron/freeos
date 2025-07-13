@@ -5,8 +5,18 @@ use axerrno::{LinuxError, LinuxResult};
 use axhal::arch::TrapFrame;
 use axtask::{TaskExtRef, current};
 use starry_core::mm::{load_user_app, map_trampoline};
+use xmas_elf::ElfFile;
 
 use crate::ptr::UserConstPtr;
+
+/// Validate if the file is a valid executable format
+fn validate_executable(data: &[u8]) -> LinuxResult<()> {
+    if data.starts_with(b"#!") || ElfFile::new(data).is_ok() {
+        Ok(())
+    } else {
+        Err(LinuxError::ENOEXEC)
+    }
+}
 
 pub fn sys_execve(
     tf: &mut TrapFrame,
@@ -41,18 +51,24 @@ pub fn sys_execve(
         return Err(LinuxError::EAGAIN);
     }
 
+    // Validate the executable without modifying the address space
+    let file_data = axfs::api::read(&path).map_err(|_| LinuxError::ENOENT)?;
+    validate_executable(&file_data)?;
+
+    // Proceed with execve
     let mut aspace = curr_ext.process_data().aspace.lock();
     aspace.unmap_user_areas()?;
     map_trampoline(&mut aspace)?;
     axhal::arch::flush_tlb(None);
 
     let (entry_point, user_stack_base) =
-        load_user_app(&mut aspace, &args, &envs).map_err(|_| {
-            error!("Failed to load app {}", path);
+        load_user_app(&mut aspace, &path, &args, &envs).map_err(|e| {
+            error!("Failed to load app {}: {:?}", path, e);
             LinuxError::ENOENT
         })?;
     drop(aspace);
 
+    // Set process name and executable path
     let name = path
         .rsplit_once('/')
         .map_or(path.as_str(), |(_, name)| name);
