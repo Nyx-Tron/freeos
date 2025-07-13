@@ -2,7 +2,7 @@ use core::ffi::{c_char, c_int};
 
 use axerrno::{AxError, LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
-use linux_raw_sys::general::{AT_EMPTY_PATH, stat, statx};
+use linux_raw_sys::general::{AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, stat, statx};
 
 use crate::{
     file::{Directory, File, FileLike, Kstat, get_file_like},
@@ -20,6 +20,21 @@ fn stat_at_path(path: &str) -> LinuxResult<Kstat> {
         }
         Err(e) => Err(e.into()),
     }
+}
+
+fn lstat_at_path(path: &str) -> LinuxResult<Kstat> {
+    // Use symlink_metadata API that doesn't follow symlinks
+    let metadata = axfs::api::symlink_metadata(path)?;
+    let ty = metadata.file_type() as u8;
+    let perm = metadata.permissions().mode() as u32;
+
+    Ok(Kstat::new(
+        ((ty as u32) << 12) | perm,
+        metadata.len(),
+        metadata.len() / 512 + 1,
+        512,
+        1,
+    ))
 }
 
 /// Get the file metadata by `path` and write into `statbuf`.
@@ -47,8 +62,12 @@ pub fn sys_fstat(fd: i32, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
 ///
 /// Return 0 if success.
 pub fn sys_lstat(path: UserConstPtr<c_char>, statbuf: UserPtr<stat>) -> LinuxResult<isize> {
-    // TODO: symlink
-    sys_stat(path, statbuf)
+    let path = path.get_as_str()?;
+    debug!("sys_lstat <= path: {}", path);
+
+    *statbuf.get_as_mut()? = lstat_at_path(path)?.into();
+
+    Ok(0)
 }
 
 pub fn sys_fstatat(
@@ -71,7 +90,13 @@ pub fn sys_fstatat(
         f.stat()?.into()
     } else {
         let path = handle_file_path(dirfd, path.unwrap_or_default())?;
-        stat_at_path(path.as_str())?.into()
+        if (flags & AT_SYMLINK_NOFOLLOW) != 0 {
+            // Don't follow symlinks - use lstat
+            lstat_at_path(path.as_str())?.into()
+        } else {
+            // Follow symlinks - use stat
+            stat_at_path(path.as_str())?.into()
+        }
     };
 
     Ok(0)

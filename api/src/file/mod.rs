@@ -48,6 +48,20 @@ impl Default for Kstat {
     }
 }
 
+impl Kstat {
+    /// Creates a new Kstat with specified values, using defaults for others
+    pub fn new(mode: u32, size: u64, blocks: u64, blksize: u32, nlink: u32) -> Self {
+        Self {
+            mode,
+            size,
+            blocks,
+            blksize,
+            nlink,
+            ..Default::default()
+        }
+    }
+}
+
 impl From<Kstat> for stat {
     fn from(value: Kstat) -> Self {
         // SAFETY: valid for stat

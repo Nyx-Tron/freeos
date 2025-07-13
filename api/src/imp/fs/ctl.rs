@@ -129,6 +129,11 @@ impl From<axfs::api::FileType> for FileType {
         match ft {
             ft if ft.is_dir() => FileType::Dir,
             ft if ft.is_file() => FileType::Reg,
+            ft if ft.is_symlink() => FileType::Lnk,
+            ft if ft.is_block_device() => FileType::Blk,
+            ft if ft.is_char_device() => FileType::Chr,
+            ft if ft.is_fifo() => FileType::Fifo,
+            ft if ft.is_socket() => FileType::Socket,
             _ => FileType::Unknown,
         }
     }
@@ -312,4 +317,60 @@ pub fn sys_getcwd(buf: UserPtr<u8>, size: usize) -> LinuxResult<isize> {
     } else {
         Err(LinuxError::ERANGE)
     }
+}
+
+/// Create a symbolic link
+pub fn sys_symlinkat(
+    target: UserConstPtr<c_char>,
+    new_dirfd: c_int,
+    new_path: UserConstPtr<c_char>,
+) -> LinuxResult<isize> {
+    let target = target.get_as_str()?;
+    let new_path = new_path.get_as_str()?;
+    debug!(
+        "sys_symlinkat <= target: {}, new_dirfd: {}, new_path: {}",
+        target, new_dirfd, new_path
+    );
+
+    let new_path = handle_file_path(new_dirfd, new_path)?;
+    axfs::api::create_symlink(target, &new_path)?;
+
+    Ok(0)
+}
+
+/// Create a symbolic link
+pub fn sys_symlink(
+    target: UserConstPtr<c_char>,
+    new_path: UserConstPtr<c_char>,
+) -> LinuxResult<isize> {
+    sys_symlinkat(target, AT_FDCWD, new_path)
+}
+
+/// Read value of a symbolic link
+pub fn sys_readlinkat(
+    dirfd: c_int,
+    path: UserConstPtr<c_char>,
+    buf: UserPtr<u8>,
+    buf_size: usize,
+) -> LinuxResult<isize> {
+    let path = path.get_as_str()?;
+    let buf = buf.get_as_mut_slice(buf_size)?;
+    debug!(
+        "sys_readlinkat <= dirfd: {}, path: {}, buf_size: {}",
+        dirfd, path, buf_size
+    );
+
+    let path = handle_file_path(dirfd, path)?;
+    let bytes_read = axfs::api::read_link(&path, buf)?;
+
+    Ok(bytes_read as isize)
+}
+
+/// Read value of a symbolic link
+pub fn sys_readlink(
+    path: UserConstPtr<c_char>,
+    buf: UserPtr<u8>,
+    buf_size: usize,
+) -> LinuxResult<isize> {
+    sys_readlinkat(AT_FDCWD, path, buf, buf_size)
 }
