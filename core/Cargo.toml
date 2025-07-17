@@ -7,6 +7,7 @@ homepage.workspace = true
 repository.workspace = true
 
 [dependencies]
+axalloc.workspace = true
 axconfig.workspace = true
 axfs.workspace = true
 axhal.workspace = true
@@ -29,5 +30,6 @@ kernel-elf-parser = "0.3"
 numeric-enum-macro = "0.2"
 percpu = "0.2.0"
 xmas-elf = "0.9"
+lazy_static = { version = "1.5", features = ["spin_no_std"] }
 
 weak-map = "0.1.1"

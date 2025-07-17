@@ -145,6 +145,12 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         Sysno::munmap => sys_munmap(tf.arg0(), tf.arg1() as _),
         Sysno::mprotect => sys_mprotect(tf.arg0(), tf.arg1() as _, tf.arg2() as _),
 
+        // shared memory
+        Sysno::shmget => sys_shmget(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
+        Sysno::shmat => sys_shmat(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
+        Sysno::shmdt => sys_shmdt(tf.arg0() as _),
+        Sysno::shmctl => sys_shmctl(tf.arg0() as _, tf.arg1() as _, tf.arg2().into()),
+
         // task info
         Sysno::getpid => sys_getpid(),
         Sysno::getppid => sys_getppid(),
