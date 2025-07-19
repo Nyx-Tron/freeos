@@ -122,12 +122,20 @@ pub fn load_user_app(
         let pos = head.iter().position(|c| *c == b'\n').unwrap_or(head.len());
         let line = core::str::from_utf8(&head[..pos]).map_err(|_| AxError::InvalidData)?;
 
-        let new_args: Vec<String> = line
-            .splitn(2, |c: char| c.is_ascii_whitespace())
-            .map(|s| s.trim_ascii().to_owned())
-            .chain(args.iter().cloned())
-            .collect();
-        return load_user_app(uspace, &new_args[0], &new_args, envs);
+        let trimmed_line = line.trim_start();
+        if trimmed_line.is_empty() {
+        } else {
+            let new_args: Vec<String> = trimmed_line
+                .splitn(2, |c: char| c.is_ascii_whitespace())
+                .map(|s| s.trim_ascii().to_owned())
+                .filter(|s| !s.is_empty())
+                .chain(args.iter().cloned())
+                .collect();
+
+            if !new_args.is_empty() {
+                return load_user_app(uspace, &new_args[0], &new_args, envs);
+            }
+        }
     }
     let elf = ElfFile::new(&file_data).map_err(|_| AxError::InvalidData)?;
 

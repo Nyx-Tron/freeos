@@ -43,6 +43,14 @@ impl FileLike for File {
         Ok(self.inner().write(buf)?)
     }
 
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LinuxResult<usize> {
+        Ok(self.inner().read_at(offset, buf)?)
+    }
+
+    fn write_at(&self, offset: u64, buf: &[u8]) -> LinuxResult<usize> {
+        Ok(self.inner().write_at(offset, buf)?)
+    }
+
     fn stat(&self) -> LinuxResult<Kstat> {
         let metadata = self.inner().get_attr()?;
         let ty = metadata.file_type() as u8;
@@ -55,6 +63,16 @@ impl FileLike for File {
             blksize: 512,
             ..Default::default()
         })
+    }
+
+    fn truncate(&self, len: u64) -> LinuxResult {
+        self.inner().truncate(len)?;
+        Ok(())
+    }
+
+    fn fsync(&self) -> LinuxResult {
+        self.inner().fsync()?;
+        Ok(())
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
