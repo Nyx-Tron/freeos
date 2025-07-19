@@ -60,6 +60,11 @@ impl Kstat {
             ..Default::default()
         }
     }
+
+    /// Get the size of the file
+    pub fn size(&self) -> u64 {
+        self.size
+    }
 }
 
 impl From<Kstat> for stat {

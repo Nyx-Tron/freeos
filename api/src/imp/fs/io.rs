@@ -1,3 +1,4 @@
+use alloc::{sync::Arc, vec};
 use core::ffi::c_int;
 
 use axerrno::{LinuxError, LinuxResult};
@@ -5,9 +6,11 @@ use axio::SeekFrom;
 use linux_raw_sys::general::{__kernel_off_t, iovec};
 
 use crate::{
-    file::{FD_TABLE, File, FileLike, get_file_like},
+    file::{FD_TABLE, File, FileLike, Pipe, get_file_like},
     ptr::{UserConstPtr, UserPtr},
 };
+
+const DEFAULT_BUFFER_SIZE: usize = 8192;
 
 /// Read data from the file indicated by `fd` at a specific offset.
 ///
@@ -212,4 +215,210 @@ pub fn sys_lseek(fd: c_int, offset: __kernel_off_t, whence: c_int) -> LinuxResul
     };
     let off = File::from_fd(fd)?.inner().seek(pos)?;
     Ok(off as _)
+}
+
+pub fn sys_copy_file_range(
+    fd_in: c_int,
+    off_in: UserPtr<__kernel_off_t>,
+    fd_out: c_int,
+    off_out: UserPtr<__kernel_off_t>,
+    len: usize,
+    _flags: u32,
+) -> LinuxResult<isize> {
+    debug!(
+        "sys_copy_file_range <= fd_in: {}, fd_out: {}, len: {}",
+        fd_in, fd_out, len
+    );
+
+    if fd_in == fd_out {
+        return Err(LinuxError::EINVAL);
+    }
+
+    let file_in = File::from_fd(fd_in)?;
+    let file_out = File::from_fd(fd_out)?;
+
+    let mut buffer = vec![0u8; DEFAULT_BUFFER_SIZE.min(len)];
+    let mut total_copied = 0;
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let chunk_size = DEFAULT_BUFFER_SIZE.min(remaining);
+
+        let read_bytes = if off_in.is_null() {
+            file_in.read(&mut buffer[..chunk_size])?
+        } else {
+            let offset_ref = off_in.get_as_mut()?;
+            let current_offset = *offset_ref;
+            let bytes = file_in.read_at(current_offset as u64, &mut buffer[..chunk_size])?;
+            *offset_ref += bytes as __kernel_off_t;
+            bytes
+        };
+
+        if read_bytes == 0 {
+            break;
+        }
+
+        let written_bytes = if off_out.is_null() {
+            file_out.write(&buffer[..read_bytes])?
+        } else {
+            let offset_ref = off_out.get_as_mut()?;
+            let current_offset = *offset_ref;
+            let bytes = file_out.write_at(current_offset as u64, &buffer[..read_bytes])?;
+            *offset_ref += bytes as __kernel_off_t;
+            bytes
+        };
+
+        total_copied += written_bytes;
+        remaining -= written_bytes;
+
+        if written_bytes < read_bytes {
+            break;
+        }
+    }
+
+    Ok(total_copied as isize)
+}
+
+pub fn sys_splice(
+    fd_in: c_int,
+    off_in: UserPtr<__kernel_off_t>,
+    fd_out: c_int,
+    off_out: UserPtr<__kernel_off_t>,
+    len: usize,
+    _flags: u32,
+) -> LinuxResult<isize> {
+    debug!(
+        "sys_splice <= fd_in: {}, fd_out: {}, len: {}",
+        fd_in, fd_out, len
+    );
+
+    if fd_in == fd_out {
+        return Err(LinuxError::EINVAL);
+    }
+
+    let validate_offset = |offset_ptr: UserPtr<__kernel_off_t>| -> LinuxResult<()> {
+        if !offset_ptr.is_null() {
+            let offset = *offset_ptr.get_as_mut()?;
+            if offset < 0 {
+                return Err(LinuxError::EINVAL);
+            }
+        }
+        Ok(())
+    };
+
+    validate_offset(off_in)?;
+    validate_offset(off_out)?;
+
+    let pipe_in = Pipe::from_fd(fd_in).ok();
+    let pipe_out = Pipe::from_fd(fd_out).ok();
+
+    match (pipe_in, pipe_out) {
+        (Some(pipe), None) => {
+            if !pipe.readable() {
+                return Err(LinuxError::EPERM);
+            }
+            if off_out.is_null() {
+                return Err(LinuxError::EINVAL);
+            }
+
+            let file_out = File::from_fd(fd_out)?;
+            splice_pipe_to_file(pipe, file_out, off_out, len)
+        }
+        (None, Some(pipe)) => {
+            if !pipe.writable() {
+                return Err(LinuxError::EPERM);
+            }
+            if off_in.is_null() {
+                return Err(LinuxError::EINVAL);
+            }
+
+            let file_in = File::from_fd(fd_in)?;
+            splice_file_to_pipe(file_in, pipe, off_in, len)
+        }
+        _ => Err(LinuxError::EINVAL),
+    }
+}
+
+fn splice_pipe_to_file(
+    pipe: Arc<crate::file::Pipe>,
+    file: Arc<File>,
+    off_out: UserPtr<__kernel_off_t>,
+    len: usize,
+) -> LinuxResult<isize> {
+    let mut buffer = vec![0u8; DEFAULT_BUFFER_SIZE.min(len)];
+    let mut total_copied = 0;
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let available = pipe.available_data();
+        if available == 0 {
+            if pipe.closed() {
+                break;
+            }
+            break;
+        }
+
+        let chunk_size = DEFAULT_BUFFER_SIZE.min(remaining).min(available);
+        let bytes_read = pipe.read(&mut buffer[..chunk_size])?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        let off_out_ref = off_out.get_as_mut()?;
+        let current_off_out = *off_out_ref;
+        let written_bytes = file.write_at(current_off_out as u64, &buffer[..bytes_read])?;
+        *off_out_ref += written_bytes as __kernel_off_t;
+
+        total_copied += written_bytes;
+        remaining -= written_bytes;
+
+        if written_bytes < bytes_read {
+            break;
+        }
+    }
+
+    Ok(total_copied as isize)
+}
+
+fn splice_file_to_pipe(
+    file: Arc<File>,
+    pipe: Arc<crate::file::Pipe>,
+    off_in: UserPtr<__kernel_off_t>,
+    len: usize,
+) -> LinuxResult<isize> {
+    let mut buffer = vec![0u8; DEFAULT_BUFFER_SIZE.min(len)];
+    let mut total_copied = 0;
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let chunk_size = DEFAULT_BUFFER_SIZE.min(remaining);
+
+        if !off_in.is_null() {
+            let current_off_in = *off_in.get_as_mut()?;
+            let file_stat = file.stat()?;
+            if current_off_in >= file_stat.size() as __kernel_off_t {
+                break;
+            }
+        }
+
+        let off_in_ref = off_in.get_as_mut()?;
+        let current_off_in = *off_in_ref;
+        let read_bytes = file.read_at(current_off_in as u64, &mut buffer[..chunk_size])?;
+        *off_in_ref += read_bytes as __kernel_off_t;
+        if read_bytes == 0 {
+            break;
+        }
+
+        let written_bytes = pipe.write(&buffer[..read_bytes])?;
+
+        total_copied += written_bytes;
+        remaining -= written_bytes;
+
+        if written_bytes < read_bytes {
+            break;
+        }
+    }
+
+    Ok(total_copied as isize)
 }
