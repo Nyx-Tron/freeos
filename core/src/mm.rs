@@ -109,14 +109,13 @@ fn map_elf(uspace: &mut AddrSpace, elf: &ElfFile) -> AxResult<(VirtAddr, [AuxvEn
 /// - The stack pointer of the user app.
 pub fn load_user_app(
     uspace: &mut AddrSpace,
-    path: &str,
     args: &[String],
     envs: &[String],
 ) -> AxResult<(VirtAddr, VirtAddr)> {
     if args.is_empty() {
         return Err(AxError::InvalidInput);
     }
-    let file_data = axfs::api::read(path)?;
+    let file_data = axfs::api::read(args[0].as_str())?;
     if file_data.starts_with(b"#!") {
         let head = &file_data[2..file_data.len().min(256)];
         let pos = head.iter().position(|c| *c == b'\n').unwrap_or(head.len());
@@ -127,7 +126,7 @@ pub fn load_user_app(
             .map(|s| s.trim_ascii().to_owned())
             .chain(args.iter().cloned())
             .collect();
-        return load_user_app(uspace, &new_args[0], &new_args, envs);
+        return load_user_app(uspace, &new_args, envs);
     }
     let elf = ElfFile::new(&file_data).map_err(|_| AxError::InvalidData)?;
 
@@ -160,7 +159,7 @@ pub fn load_user_app(
         // Set the first argument to the path of the user app.
         let mut new_args = vec![interp_path];
         new_args.extend_from_slice(args);
-        return load_user_app(uspace, &new_args[0], &new_args, envs);
+        return load_user_app(uspace, &new_args, envs);
     }
 
     let (entry, mut auxv) = map_elf(uspace, &elf)?;
