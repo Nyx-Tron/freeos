@@ -244,7 +244,6 @@ dependencies = [
  "axio",
  "axns",
  "axsync",
- "axtask",
  "cap_access",
  "cfg-if",
  "fatfs",
@@ -257,7 +256,7 @@ dependencies = [
 [[package]]
 name = "axfs_devfs"
 version = "0.1.2"
-source = "git+https://github.com/MF-B/axfs_crates.git#b38cb4a478d08e9ce2c7281c8fb69913fe74d7d4"
+source = "git+https://github.com/MF-B/axfs_crates.git#54ea5c36230ff352c59c6cb05a2b7162172237e0"
 dependencies = [
  "axfs_vfs",
  "log",
@@ -267,7 +266,7 @@ dependencies = [
 [[package]]
 name = "axfs_ramfs"
 version = "0.1.2"
-source = "git+https://github.com/MF-B/axfs_crates.git#b38cb4a478d08e9ce2c7281c8fb69913fe74d7d4"
+source = "git+https://github.com/MF-B/axfs_crates.git#54ea5c36230ff352c59c6cb05a2b7162172237e0"
 dependencies = [
  "axfs_vfs",
  "log",
@@ -277,7 +276,7 @@ dependencies = [
 [[package]]
 name = "axfs_vfs"
 version = "0.1.2"
-source = "git+https://github.com/MF-B/axfs_crates.git#b38cb4a478d08e9ce2c7281c8fb69913fe74d7d4"
+source = "git+https://github.com/MF-B/axfs_crates.git#54ea5c36230ff352c59c6cb05a2b7162172237e0"
 dependencies = [
  "axerrno",
  "bitflags 2.9.1",
@@ -1288,7 +1287,6 @@ dependencies = [
  "spin",
  "starry-core",
  "x86",
- "xmas-elf",
 ]
 
 [[package]]

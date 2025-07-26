@@ -8,7 +8,6 @@
 extern crate axlog;
 extern crate alloc;
 
-mod fs;
 pub mod futex;
 pub mod mm;
 pub mod task;
