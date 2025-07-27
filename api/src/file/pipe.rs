@@ -1,4 +1,4 @@
-use core::any::Any;
+use core::{any::Any, ffi::c_int};
 
 use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
@@ -6,7 +6,7 @@ use axio::PollState;
 use axsync::Mutex;
 use linux_raw_sys::general::S_IFIFO;
 
-use super::{FileLike, Kstat};
+use super::{FileLike, Kstat, get_file_like};
 
 #[derive(Copy, Clone, PartialEq)]
 enum RingBufferStatus {
@@ -104,6 +104,11 @@ impl Pipe {
     pub fn closed(&self) -> bool {
         Arc::strong_count(&self.buffer) == 1
     }
+
+    pub fn available_data(&self) -> usize {
+        let ring_buffer = self.buffer.lock();
+        ring_buffer.available_read()
+    }
 }
 
 impl FileLike for Pipe {
@@ -190,5 +195,12 @@ impl FileLike for Pipe {
 
     fn set_nonblocking(&self, _nonblocking: bool) -> LinuxResult {
         Ok(())
+    }
+
+    fn from_fd(fd: c_int) -> LinuxResult<Arc<Self>> {
+        get_file_like(fd)?
+            .into_any()
+            .downcast::<Self>()
+            .map_err(|_| LinuxError::EINVAL)
     }
 }

@@ -43,7 +43,6 @@ impl EpollInstance {
     }
 
     fn control(&self, op: usize, fd: usize, event: &EpollEvent) -> LinuxResult<usize> {
-        // Verify that the fd exists
         get_file_like(fd as c_int)?;
 
         let mut events = self.events.lock();
@@ -151,7 +150,6 @@ pub fn sys_epoll_create(size: c_int) -> LinuxResult<isize> {
 pub fn sys_epoll_create1(flags: c_int) -> LinuxResult<isize> {
     debug!("sys_epoll_create1 <= flags: {}", flags);
 
-    // For simplicity, ignore flags for now
     sys_epoll_create(1)
 }
 
@@ -164,16 +162,13 @@ pub fn sys_epoll_ctl(
 ) -> LinuxResult<isize> {
     debug!("sys_epoll_ctl <= epfd: {}, op: {}, fd: {}", epfd, op, fd);
 
-    // For EPOLL_CTL_DEL, event can be NULL
     let ev = if op as u32 == EPOLL_CTL_DEL {
         if event.is_null() {
-            // Create a dummy event for DEL operation (event data is ignored)
             &EpollEvent { events: 0, data: 0 }
         } else {
             event.get_as_mut()?
         }
     } else {
-        // For ADD and MOD operations, event must not be NULL
         event.get_as_mut()?
     };
 
@@ -204,23 +199,21 @@ pub fn sys_epoll_wait(
     loop {
         axnet::poll_interfaces();
 
-        // Create a buffer to hold events
         let mut event_buffer = Vec::with_capacity(maxevents as usize);
         event_buffer.resize(maxevents as usize, EpollEvent { events: 0, data: 0 });
 
         let events_num = epoll_instance.poll_all(&mut event_buffer)?;
         if events_num > 0 {
-            // Copy events back to user space
             let events_slice = events.get_as_mut_slice(events_num)?;
             events_slice[..events_num].copy_from_slice(&event_buffer[..events_num]);
             return Ok(events_num as isize);
         }
 
+        axtask::yield_now();
+
         if deadline.is_some_and(|ddl| wall_time() >= ddl) {
             return Ok(0);
         }
-
-        axtask::sleep(Duration::from_millis(1));
     }
 }
 
@@ -237,6 +230,5 @@ pub fn sys_epoll_pwait(
         epfd, maxevents, timeout
     );
 
-    // For now, ignore signal mask and just call epoll_wait
     sys_epoll_wait(epfd, events, maxevents, timeout)
 }

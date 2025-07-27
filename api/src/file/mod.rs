@@ -60,6 +60,11 @@ impl Kstat {
             ..Default::default()
         }
     }
+
+    /// Get the size of the file
+    pub fn size(&self) -> u64 {
+        self.size
+    }
 }
 
 impl From<Kstat> for stat {
@@ -101,7 +106,24 @@ impl From<Kstat> for statx {
 pub trait FileLike: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize>;
     fn write(&self, buf: &[u8]) -> LinuxResult<usize>;
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> LinuxResult<usize> {
+        let _ = offset;
+        let _ = buf;
+        Err(LinuxError::ESPIPE)
+    }
+    fn write_at(&self, offset: u64, buf: &[u8]) -> LinuxResult<usize> {
+        let _ = offset;
+        let _ = buf;
+        Err(LinuxError::ESPIPE)
+    }
     fn stat(&self) -> LinuxResult<Kstat>;
+    fn truncate(&self, len: u64) -> LinuxResult {
+        let _ = len;
+        Err(LinuxError::EINVAL)
+    }
+    fn fsync(&self) -> LinuxResult {
+        Err(LinuxError::EINVAL)
+    }
     fn into_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
     fn poll(&self) -> LinuxResult<PollState>;
     fn set_nonblocking(&self, nonblocking: bool) -> LinuxResult;
@@ -145,6 +167,17 @@ impl FD_TABLE {
         for id in ids {
             let _ = table.remove(id);
         }
+    }
+
+    /// Synchronize all open files in the file descriptor table.
+    pub fn sync_all(&self) -> LinuxResult {
+        let table = self.read();
+        for id in table.ids() {
+            if let Some(file) = table.get(id) {
+                file.fsync()?;
+            }
+        }
+        Ok(())
     }
 }
 

@@ -2,6 +2,7 @@
 
 use core::{ffi::c_int, time::Duration};
 
+use super::poll_with_timeout;
 use crate::file::get_file_like;
 use crate::ptr::UserPtr;
 use axerrno::{LinuxError, LinuxResult};
@@ -63,7 +64,7 @@ impl FdSets {
         res_read_fds: UserPtr<FdSet>,
         res_write_fds: UserPtr<FdSet>,
         res_except_fds: UserPtr<FdSet>,
-    ) -> LinuxResult<usize> {
+    ) -> LinuxResult<Option<usize>> {
         let mut result_read = [0usize; FD_SETSIZE_USIZES];
         let mut result_write = [0usize; FD_SETSIZE_USIZES];
         let mut result_except = [0usize; FD_SETSIZE_USIZES];
@@ -141,8 +142,22 @@ impl FdSets {
             };
         }
 
-        Ok(res_num)
+        if res_num > 0 {
+            Ok(Some(res_num))
+        } else {
+            Ok(None)
+        }
     }
+}
+
+/// Clear fd_set to all zeros
+fn clear_fd_set(fd_set: UserPtr<FdSet>) -> LinuxResult<()> {
+    if !fd_set.is_null() {
+        *fd_set.get_as_mut()? = FdSet {
+            fds_bits: [0; FD_SETSIZE_USIZES],
+        };
+    }
+    Ok(())
 }
 
 /// Implementation of select system call
@@ -173,36 +188,13 @@ pub fn sys_select(
 
     let fd_sets = FdSets::from(nfds, readfds, writefds, exceptfds)?;
 
-    // Clear result fd_sets
-    if !readfds.is_null() {
-        *readfds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
-    if !writefds.is_null() {
-        *writefds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
-    if !exceptfds.is_null() {
-        *exceptfds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
+    clear_fd_set(readfds)?;
+    clear_fd_set(writefds)?;
+    clear_fd_set(exceptfds)?;
 
-    loop {
-        axnet::poll_interfaces();
-
-        let res = fd_sets.poll_all(readfds, writefds, exceptfds)?;
-        if res > 0 {
-            return Ok(res as isize);
-        }
-
-        if deadline.is_some_and(|ddl| wall_time() >= ddl) {
-            return Ok(0);
-        }
-
-        axtask::sleep(Duration::from_millis(1));
+    match poll_with_timeout(deadline, || fd_sets.poll_all(readfds, writefds, exceptfds))? {
+        Some(res) => Ok(res as isize),
+        None => Ok(0),
     }
 }
 
@@ -235,35 +227,12 @@ pub fn sys_pselect6(
 
     let fd_sets = FdSets::from(nfds, readfds, writefds, exceptfds)?;
 
-    // Clear result fd_sets
-    if !readfds.is_null() {
-        *readfds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
-    if !writefds.is_null() {
-        *writefds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
-    if !exceptfds.is_null() {
-        *exceptfds.get_as_mut()? = FdSet {
-            fds_bits: [0; FD_SETSIZE_USIZES],
-        };
-    }
+    clear_fd_set(readfds)?;
+    clear_fd_set(writefds)?;
+    clear_fd_set(exceptfds)?;
 
-    loop {
-        axnet::poll_interfaces();
-
-        let res = fd_sets.poll_all(readfds, writefds, exceptfds)?;
-        if res > 0 {
-            return Ok(res as isize);
-        }
-
-        if deadline.is_some_and(|ddl| wall_time() >= ddl) {
-            return Ok(0);
-        }
-
-        axtask::sleep(Duration::from_millis(1));
+    match poll_with_timeout(deadline, || fd_sets.poll_all(readfds, writefds, exceptfds))? {
+        Some(res) => Ok(res as isize),
+        None => Ok(0),
     }
 }

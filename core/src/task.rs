@@ -30,7 +30,7 @@ use memory_addr::VirtAddrRange;
 use spin::{Once, RwLock};
 use weak_map::WeakMap;
 
-use crate::{futex::FutexTable, time::TimeStat};
+use crate::{futex::FutexTable, shm::ProcessShmData, time::TimeStat};
 
 /// Create a new user task.
 pub fn new_user_task(
@@ -210,6 +210,9 @@ pub struct ProcessData {
 
     /// The futex table.
     pub futex_table: FutexTable,
+
+    /// The shared memory data.
+    pub shm_data: Mutex<ProcessShmData>,
 }
 
 impl ProcessData {
@@ -236,6 +239,7 @@ impl ProcessData {
             )),
 
             futex_table: FutexTable::new(),
+            shm_data: Mutex::new(ProcessShmData::new()),
         }
     }
 
