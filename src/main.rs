@@ -13,6 +13,7 @@ mod syscall;
 
 #[unsafe(no_mangle)]
 fn main() {
+    starry_core::file::init_filesystem();
     // Create a init process
     axprocess::Process::new_init(axtask::current().id().as_u64() as _).build();
 
