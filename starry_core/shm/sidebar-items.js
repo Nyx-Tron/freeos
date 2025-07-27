@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IPC_PRIVATE"],"fn":["shm_manager"],"struct":["IpcPerm","ProcessShmData","ShmAttach","ShmManager","ShmSegment","ShmidDs"],"type":["ShmId","ShmKey"]};
