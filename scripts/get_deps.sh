@@ -1,7 +1,7 @@
 #!/bin/bash
 
 AX_ROOT=.arceos
-COMMIT=a59b6b8
+COMMIT=06437ee
 test ! -d "$AX_ROOT" && echo "Cloning repositories ..." || true
 test ! -d "$AX_ROOT" && git clone https://github.com/MF-B/arceos "$AX_ROOT" || true
 
